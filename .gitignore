@@ -1,0 +1,40 @@
+# Environment configuration & secrets
+.env
+.env.*
+!.env.example
+
+# Google API credentials & OAuth tokens
+credentials.json
+credentials*.json
+client_secret*.json
+token.json
+token_*.json
+token*.pickle
+token*.json
+*token*.json
+
+# Local runtime data & attachments
+data/
+temp_attachments/
+
+# Python bytecode & caching
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE and editor settings
+.vscode/
+.idea/
+
+# Temporary files and logs
+*.tmp
+*.bak
+*.log
+.DS_Store
+Thumbs.db
