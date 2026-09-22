@@ -4,18 +4,25 @@
 
 ---
 
-## Overview
+## Problem Statement & Solution
 
-During campus and off-campus recruitment drives, students receive critical notifications across multiple email accounts, including personal inboxes and official college/university mailboxes. Key announcements—such as online test links, interview shortlists, and reporting venues—are frequently distributed under tight deadlines. Crucially, shortlist data is often enclosed within attached Excel workbooks (`.xlsx` or `.xls`) containing hundreds of candidate registration numbers rather than written in the email body.
+### Problem Statement
 
-Missing an announcement or delaying a response can lead to missed assessments or forfeited interview slots. Constantly refreshing multiple email accounts on a computer is distracting and error-prone, especially when an offline computer misses emails delivered while the machine was powered down.
+During campus and off-campus recruitment drives, students face a significant operational challenge: critical, time-sensitive placement notifications are scattered across multiple Gmail accounts, typically split between personal inboxes and official college/university mailboxes.
 
-**PlacementMonitor** solves this problem by providing an automated, resilient monitoring pipeline:
-- Monitors two distinct Gmail accounts concurrently via official Google APIs.
-- Executes an intelligent **catch-up scan on startup**, querying all emails received since the last active checkpoint (or the past 24 hours on initial run), ensuring offline periods never cause missed alerts.
-- Evaluates both email bodies and attached spreadsheets cell-by-cell for candidate identifiers.
-- Runs a deterministic **two-stage placement relevance classification engine** to prevent unrelated emails (such as Google security alerts, login confirmations, or generic campus circulars) from triggering false alarms.
-- Dispatches structured, mobile-optimized push notifications to Telegram with extracted operational context (company name, interview dates, reporting times, venues, and coordinator links).
+- **Embedded Shortlist Information:** Crucial candidate shortlist announcements are frequently enclosed within attached Excel workbooks (`.xlsx` or `.xls`) containing hundreds of candidate roll numbers, rather than stated directly in the email body.
+- **High-Stakes Deadlines:** Placement updates often have narrow response windows for mandatory online test links, technical interview slots, confirmation forms, and venue reporting instructions. Missing an email or delaying action can result in immediate disqualification.
+- **Error-Prone Manual Tracking:** Manually monitoring and refreshing multiple inboxes is exhausting and error-prone. More critically, when a student's computer is turned off or offline, any notifications arriving during that downtime are easily overlooked.
+
+### Solution
+
+**PlacementMonitor** automates the entire monitoring and notification pipeline to ensure no opportunity is missed:
+
+- **Dual Gmail Monitoring:** Concurrently monitors both personal and college Gmail accounts using official Google Gmail APIs.
+- **Startup Catch-Up Scanning:** Automatically performs an intelligent catch-up scan upon startup, retrieving and processing all emails delivered while the system was offline (from the last recorded monitoring checkpoint through the current time, or the past 24 hours on initial run).
+- **Deep Email & Attachment Parsing:** Inspects email subjects and bodies while deeply scanning `.xlsx` and `.xls` spreadsheet attachments cell-by-cell across all sheets for candidate identifiers.
+- **Two-Stage Deterministic Relevance Classification:** Evaluates candidate-matched emails through a two-stage classification engine to eliminate false positives from unrelated emails (such as Google security alerts, device sign-in warnings, billing receipts, or generic administrative circulars).
+- **Structured Telegram Push Alerts:** Immediately dispatches clean, actionable notifications to Telegram, including vital operational context such as company name, test/interview dates, reporting times, venues, next steps, and coordinator links.
 
 ---
 
