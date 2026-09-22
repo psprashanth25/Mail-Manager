@@ -163,7 +163,13 @@ def extract_company_name_mailbox2(subject, body="", attachment_names=None):
         m = re.search(pat, subject, re.IGNORECASE)
         if m:
             comp = m.group(1).strip().strip(":.,-")
-            if comp and len(comp) > 1 and comp.lower() not in ("kind attention", "urgent", "important", "fwd", "re", "security alert"):
+            comp_lower = comp.lower()
+            if (
+                comp
+                and len(comp) > 1
+                and comp_lower not in ("kind attention", "urgent", "important", "fwd", "re", "security alert", "update", "notice", "announcement")
+                and not comp_lower.startswith(("shortlist", "list of", "candidates", "students", "eligible"))
+            ):
                 return comp
 
     # 2. Check attachment filenames (e.g. "Exxonmobil interview shortlist.xlsx" -> "Exxonmobil")
@@ -184,7 +190,18 @@ def extract_company_name_mailbox2(subject, body="", attachment_names=None):
             m = re.search(pat, body, re.IGNORECASE)
             if m:
                 comp = m.group(1).strip().strip(":.,-")
-                if comp and len(comp) > 1:
+                comp_lower = comp.lower().strip()
+                if (
+                    comp
+                    and len(comp) > 1
+                    and comp_lower not in (
+                        "the", "a", "an", "this", "this company", "the technical interview",
+                        "technical interview", "interview", "the interview", "the online test",
+                        "the test", "the selection process", "selection process", "next round",
+                        "the next round", "the process"
+                    )
+                    and not comp_lower.startswith(("the interview", "technical interview", "interview", "shortlist", "selection", "the technical"))
+                ):
                     return comp
 
     return "Company name could not be determined"
@@ -267,6 +284,124 @@ def extract_context(text, subject=""):
             context["Contact Details"] = ", ".join(seen_emails[:2])
 
     return context
+
+
+# Strong non-placement patterns (subject or sender) to filter out security alerts, logins, bills, etc.
+NON_PLACEMENT_SUBJECT_PATTERNS = [
+    r"\bsecurity\s+alert\b",
+    r"\bcritical\s+security\s+alert\b",
+    r"\bnew\s+sign-in\b",
+    r"\bsign-in\s+on\s+your\s+google\s+account\b",
+    r"\bgoogle\s+account\b",
+    r"\bpassword\s+(?:reset|changed?)\b",
+    r"\bverification\s+code\b",
+    r"\bverify\s+your\s+account\b",
+    r"\btwo-step\s+verification\b",
+    r"\b2-step\s+verification\b",
+    r"\baccount\s+recovery\b",
+    r"\bbilling\s+notification\b",
+    r"\bpayment\s+(?:for\s+.*?\s+)?is\s+successful\b",
+    r"\bpayment\s+successful\b",
+    r"\bquarterly\s+reminder\b",
+    r"\bterms\s+of\s+service\b",
+    r"\bprivacy\s+policy\b",
+    r"\bmanaging\s+your\s+data\b",
+]
+
+# Placement signal keywords
+PLACEMENT_KEYWORDS = [
+    "placement", "campus placement", "placement drive", "placements",
+    "recruitment", "recruiter", "recruitment drive", "campus recruitment", "recruitment process",
+    "shortlist", "shortlisted", "shortlisting",
+    "eligible", "eligibility",
+    "technical interview", "hr interview", "interview shortlist", "interview schedule", "interview",
+    "selection process", "selection round", "selection status", "selection",
+    "next round", "next level",
+    "assessment", "coding assessment", "online assessment", "aptitude test", "online test",
+    "test/interview", "test / interview",
+    "company registration", "company drive",
+    "cdc", "career development centre", "career development center", "placement cell",
+    "pre-placement", "job description"
+]
+
+PLACEMENT_SENDER_PATTERNS = [
+    r"\bcdc(?:info)?\b",
+    r"students\.cdc",
+    r"placement",
+    r"career",
+    r"recruitment"
+]
+
+
+def classify_placement_relevance(
+    subject,
+    body="",
+    sender="",
+    attachment_names=None,
+    matched_in_attachment=False
+):
+    """
+    Determine whether an email that matched student identifiers is genuinely placement-related.
+    Returns a tuple of (is_placement: bool, reason: str).
+
+    Distinguishes legitimate placement opportunities and shortlists from unrelated emails
+    (such as Google security alerts, sign-in alerts, billing receipts, or general university notices).
+    """
+    subject_str = (subject or "").strip()
+    body_str = (body or "").strip()
+    sender_str = (sender or "").strip()
+    attachment_names = attachment_names or []
+
+    subject_lower = subject_str.lower()
+    body_lower = body_str.lower()
+    sender_lower = sender_str.lower()
+    att_str_lower = " ".join(attachment_names).lower()
+    combined_text = f"{subject_lower} {body_lower} {att_str_lower}"
+
+    # 1. Check for disqualifying non-placement subject patterns
+    for pat in NON_PLACEMENT_SUBJECT_PATTERNS:
+        if re.search(pat, subject_lower):
+            return False, f"Disqualified: Matched non-placement alert pattern in subject ('{pat}')"
+
+    # 2. Check for general administrative university notifications without placement keywords
+    if re.search(r"^(?:university|campus|general|hostel|library|transport)\s+notification\b", subject_lower):
+        has_placement = any(kw in combined_text for kw in PLACEMENT_KEYWORDS)
+        if not has_placement:
+            return False, "Disqualified: General notification without recruitment or placement context"
+
+    # 3. Collect positive placement signals
+    signals = []
+
+    # Check subject (high-confidence signal)
+    for kw in PLACEMENT_KEYWORDS:
+        if kw in subject_lower:
+            signals.append(f"subject contains '{kw}'")
+
+    # Check attachment names or matched Excel attachment
+    if matched_in_attachment:
+        signals.append("identifier matched inside Excel attachment")
+    for kw in ["shortlist", "interview", "eligible", "selection", "placement", "drive", "assessment"]:
+        if kw in att_str_lower:
+            signals.append(f"attachment name contains '{kw}'")
+
+    # Check sender authority (CDC / Placement Office)
+    for pat in PLACEMENT_SENDER_PATTERNS:
+        if re.search(pat, sender_lower):
+            signals.append(f"sender matched placement authority ('{pat}')")
+            break
+
+    # Check body for placement terms
+    for kw in PLACEMENT_KEYWORDS:
+        if kw in body_lower:
+            if len(signals) < 5:
+                signals.append(f"body contains '{kw}'")
+
+    # 4. Decision logic
+    # An email is placement-related if positive signals are found
+    if signals:
+        return True, f"Placement signals detected: {', '.join(signals[:3])}"
+
+    return False, "No credible placement or recruitment context found"
 
 
 def format_mailbox2_alert(
@@ -377,6 +512,9 @@ def process_mailbox2_email(
     if not all_matches:
         return {
             "matched": False,
+            "identifier_matched": False,
+            "is_placement": False,
+            "classification": "NON-MATCH",
             "company": None,
             "matched_identifier": None,
             "alert_sent": False
@@ -384,6 +522,33 @@ def process_mailbox2_email(
 
     # Identifier matched!
     matched_label = format_matched_identifiers_label(all_matches, reg_no, neopat_id)
+    matched_in_attachment = matched_attachment_name is not None
+
+    # Step 2: Classify placement relevance
+    is_placement, classification_reason = classify_placement_relevance(
+        subject=subject,
+        body=clean_body,
+        sender=sender,
+        attachment_names=att_names,
+        matched_in_attachment=matched_in_attachment
+    )
+
+    if not is_placement:
+        # Non-placement email that merely contained the identifier
+        return {
+            "matched": False,
+            "identifier_matched": True,
+            "is_placement": False,
+            "classification": "NON-PLACEMENT",
+            "reason": classification_reason,
+            "company": None,
+            "matched_identifier": matched_label,
+            "attachment": matched_attachment_name,
+            "alert_sent": False,
+            "alert_message": None
+        }
+
+    # Legitimate placement email! Extract company and context
     company_name = extract_company_name_mailbox2(subject, clean_body, att_names)
     context_dict = extract_context(clean_body, subject=subject)
 
@@ -407,6 +572,10 @@ def process_mailbox2_email(
 
     return {
         "matched": True,
+        "identifier_matched": True,
+        "is_placement": True,
+        "classification": "PLACEMENT",
+        "reason": classification_reason,
         "company": company_name,
         "matched_identifier": matched_label,
         "attachment": matched_attachment_name,
@@ -453,9 +622,11 @@ def diagnostic_scan_mailbox2(max_emails=5, send_alert=False):
 
         if result["matched"]:
             matched_count += 1
-            print(f"    👉 MATCH DETECTED! Company: '{result['company']}', Match: {result['matched_identifier']}")
+            print(f"    👉 PLACEMENT MATCH DETECTED! Company: '{result['company']}', Match: {result['matched_identifier']}")
             if result.get("attachment"):
                 print(f"       Matched in attachment: {result['attachment']}")
+        elif result.get("identifier_matched"):
+            print(f"    ℹ️ Identifier matched ({result['matched_identifier']}), but classified as NON-PLACEMENT ({result.get('reason')}).")
         else:
             print(f"    ❌ Neither identifier ({reg_no} / {neopat_id}) found.")
         print()

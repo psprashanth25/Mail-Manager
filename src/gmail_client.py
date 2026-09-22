@@ -1,12 +1,19 @@
 import base64
+from datetime import datetime, timezone, timedelta
 import os
-import sys
 from pathlib import Path
+import sys
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+
+try:
+    from zoneinfo import ZoneInfo
+    IST = ZoneInfo("Asia/Kolkata")
+except Exception:
+    IST = timezone(timedelta(hours=5, minutes=30), name="IST")
 
 # Ensure UTF-8 output encoding for terminal on Windows
 if hasattr(sys.stdout, "reconfigure"):
@@ -151,6 +158,90 @@ def list_recent_messages(service, max_results=5, user_id="me"):
         maxResults=max_results
     ).execute()
     return response.get("messages", [])
+
+
+def to_epoch_seconds(ts, default_tz=IST):
+    """
+    Convert a datetime, timestamp number, or ISO-8601 string to integer epoch seconds.
+    Assumes Indian Standard Time (IST) if datetime is naive.
+    """
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        return int(ts)
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts)
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=default_tz)
+        return int(ts.timestamp())
+    raise TypeError(f"Unsupported timestamp format: {type(ts).__name__}")
+
+
+def list_messages_in_time_range(
+    service,
+    start_time,
+    end_time=None,
+    user_id="me",
+    overlap_buffer_seconds=0
+):
+    """
+    Retrieve all message summaries from Gmail API within a given time range.
+    Uses Gmail search query syntax ('after:<epoch> [before:<epoch>]') with full pagination.
+
+    Args:
+        service: Authorized Gmail API service resource.
+        start_time: Starting timestamp (datetime, ISO string, or epoch seconds).
+        end_time: Optional ending timestamp. If None, queries through present.
+        user_id: Gmail user ID, default 'me'.
+        overlap_buffer_seconds: Seconds subtracted from start_time to prevent boundary misses.
+
+    Returns:
+        List of message resource dicts: [{'id': '...', 'threadId': '...'}, ...]
+    """
+    if not service:
+        raise ValueError("Gmail service client is None or not authenticated.")
+
+    start_epoch = to_epoch_seconds(start_time)
+    if overlap_buffer_seconds > 0:
+        start_epoch = max(0, start_epoch - int(overlap_buffer_seconds))
+
+    q_parts = [f"after:{start_epoch}"]
+
+    if end_time is not None:
+        end_epoch = to_epoch_seconds(end_time)
+        q_parts.append(f"before:{end_epoch + 1}")
+
+    query = " ".join(q_parts)
+
+    messages = []
+    seen_ids = set()
+    page_token = None
+
+    while True:
+        try:
+            response = service.users().messages().list(
+                userId=user_id,
+                q=query,
+                pageToken=page_token,
+                maxResults=100
+            ).execute()
+        except Exception as e:
+            print(f"[Gmail Client Error] Query '{query}' failed: {type(e).__name__} - {e}")
+            raise
+
+        page_messages = response.get("messages", [])
+        for msg in page_messages:
+            mid = msg.get("id")
+            if mid and mid not in seen_ids:
+                seen_ids.add(mid)
+                messages.append(msg)
+
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            break
+
+    return messages
 
 
 def extract_attachments_metadata(payload):

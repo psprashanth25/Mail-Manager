@@ -6,3 +6,4 @@ xlrd
 requests
 python-dotenv
 beautifulsoup4
+tzdata

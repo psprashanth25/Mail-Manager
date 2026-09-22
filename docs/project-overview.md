@@ -33,22 +33,26 @@ flowchart TD
     end
 
     subgraph MB2 [Mailbox 2: College Gmail]
-        C --> C1[Fetch Recent Messages]
+        C --> C1[Fetch Messages in Time Range]
         C1 --> C2{Already Processed?}
         C2 -- Yes --> C3[Skip Duplicate]
         C2 -- No --> C4[Search Subject & Body for Identifiers]
         C4 --> C5[Download & Parse Excel Attachments .xlsx / .xls]
         C5 --> C6{Identifier Matched?}
-        C6 -- Yes --> C7[Extract Company & Context Details]
-        C7 --> C8[Dispatch Telegram Shortlist Alert]
-        C6 -- No --> C9[Log No Match]
+        C6 -- Yes --> C7[Classify Placement Relevance]
+        C7 --> C7a{Placement Related?}
+        C7a -- Yes --> C8[Extract Company & Context Details]
+        C8 --> C9[Dispatch Telegram Shortlist Alert]
+        C7a -- No --> C10[Skip Alert - Log Non-Placement]
+        C6 -- No --> C11[Log No Match]
     end
 
     subgraph State [State Persistence]
         B7 --> SP[Save Message ID to processed_messages.json]
         B8 --> SP
-        C8 --> SP
         C9 --> SP
+        C10 --> SP
+        C11 --> SP
     end
 ```
 
@@ -73,7 +77,7 @@ flowchart TD
 
 ---
 
-## 4. Mailbox 2 Logic: Shortlist & Identifier Matching
+## 4. Mailbox 2 Logic: Shortlist, Identifiers & Placement Relevance
 
 * **Target Account:** Official College/University Gmail (configured via `MAILBOX2` in `.env`).
 * **Evaluation Target:** Email subject, body, and all attached Excel workbooks.
@@ -84,6 +88,14 @@ flowchart TD
   1. **Subject Line**: Case-insensitive substring match.
   2. **Message Body**: HTML parsed via BeautifulSoup and searched case-insensitively.
   3. **Spreadsheet Attachments**: Every workbook attached to the email is downloaded temporarily and deep-scanned.
+* **Placement Relevance Classification**:
+  Matching an identifier alone is not sufficient to trigger an alert. Unrelated emails (such as Google Security Alerts, login notices, password resets, payment receipts, or general university circulars) may occasionally contain the student's registration number.
+  After an identifier match, `excel_matcher.classify_placement_relevance()` evaluates:
+  1. **Exclusion Patterns:** Disqualifies security alerts, login alerts, verification codes, billing receipts, and general non-recruitment notifications.
+  2. **Placement Signals:** Checks for recruitment drive terminology (`placement`, `shortlist`, `interview`, `selection process`, `eligible`, `assessment`, `hiring`, `next round`), CDC authority senders (`cdcinfo@`, `students.cdc`), and Excel shortlist attachment metadata.
+  3. **Classification Decision:**
+     - `PLACEMENT`: Formats and delivers the structured Telegram Shortlist Alert.
+     - `NON-PLACEMENT`: Logs the classification reason, suppresses the Telegram alert, and persists the message ID to `data/processed_messages.json` so it is evaluated once and never reconsidered.
 
 ---
 

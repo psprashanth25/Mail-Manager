@@ -140,6 +140,22 @@ PlacementMonitor solves this by acting as an always-on watcher that parses inbox
   - **Next Steps:** Flags technical interview rounds, online assessments, formal attire requirements, and laptop mandates.
   - **Links & Contacts:** Extracts placement portal links and coordinator email addresses.
 
+### Placement Relevance Classification (False-Positive Prevention)
+Student identifiers (Registration Number or NeoPat ID) can occasionally appear in emails unrelated to recruitment drives, such as:
+- Google security alerts and account activity notices
+- Sign-in confirmations, login alerts, and password resets
+- Billing receipts, payment confirmations, and subscription reminders
+- General administrative university notices (hostel, transport, library)
+
+PlacementMonitor prevents these false positives through a deterministic, explainable two-stage classification engine:
+1. **Identifier Matching:** Verifies that the candidate's Registration Number or NeoPat ID is present.
+2. **Context Verification (`classify_placement_relevance`):**
+   - **Exclusion Filters:** Disqualifies security alerts, login alerts, verification codes, and administrative notices that lack recruitment terms.
+   - **Positive Placement Signals:** Verifies the presence of placement keywords (`placement drive`, `shortlist`, `interview`, `selection process`, `eligible`, `assessment`, `hiring`), CDC/placement authority senders (`cdcinfo@`, `students.cdc`), or Excel shortlist spreadsheets.
+   - **Alert Decision:**
+     - `PLACEMENT`: Sends the structured Telegram Shortlist Alert.
+     - `NON-PLACEMENT`: Suppresses the Telegram notification, logs the classification reason, and marks the message as processed in `data/processed_messages.json` so it is evaluated once and never reconsidered.
+
 ---
 
 ## 9. Excel Attachment Processing
